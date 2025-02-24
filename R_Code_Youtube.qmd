@@ -1,0 +1,207 @@
+---
+title: "STAT651 Final Project: YouTube Data Visualization"
+author: "Xinxin Lin"
+format: 
+  html:
+    self-contained: true
+---
+
+```{r}
+#| message: false
+library(tidyverse)
+library(plotly)
+library(leaflet)
+library(tidytext)
+library(wordcloud)
+library(scales)
+library(maps)
+library(mapproj)
+library(viridis)
+library(mdsr)
+
+youtube <- read.csv("Global YouTube Statistics.csv")
+```
+
+```{r}
+# Clean data
+youtube <- youtube |>
+  mutate(category = ifelse(category == "nan", NA, category),
+         video.views = ifelse(video.views == "0", NA, video.views),
+         Country = ifelse(Country == "nan", NA, Country),
+         created_year = ifelse(created_year == "1970", NA, created_year)) |>
+  filter(!is.na(category), !is.na(video.views), 
+         !is.na(Country), !is.na(created_year))
+```
+
+```{r}
+# World Map of Number of Most Subscribed YouTube Channels by Country
+world <- map_data("world")
+
+world2 <- world |> 
+  rename(Country = region) |>
+  mutate(Country = fct_recode(Country,
+    "United States" = "USA",
+    "United Kindom" = "UK"
+  ))
+
+map_data <- youtube |>
+  group_by(Country) |>
+  summarize(n_channel = n())
+
+world_joined <- left_join(world2, map_data, by = "Country")
+
+ggplot(data = world_joined, aes(x = long, y = lat, group = group)) +
+  geom_polygon(aes(fill = n_channel), color = "black") + 
+  coord_quickmap() +
+  scale_fill_viridis() +
+  theme_bw() +
+  labs(
+    title = "Number of Most Subscribed YouTube Channels by Country",
+    fill = ""
+  )
+```
+
+
+```{r}
+# Plot of Number of YouTube Channels Created Each Year
+channel_year <- youtube |>
+  group_by(created_year) |>
+  summarize(n_channels = n())
+
+ggplot(channel_year, aes(x = created_year, y = n_channels)) +
+  geom_col(fill = "lightblue") +
+  labs(
+    x = "Created Year",
+    y = "Count",
+    title = "Number of YouTube Channels Created Each Year"
+  ) +
+  theme_bw() +
+  geom_text(aes(label = n_channels)) +
+  geom_line(linewidth = 0.3)
+```
+
+
+
+```{r}
+# Plot of Yearly Earnings Distribution By Category
+plot_earning_category <- youtube |>
+  ggplot(aes(x = category, y = highest_yearly_earnings)) +
+  geom_boxplot(aes(fill = category)) +
+  scale_y_continuous(labels = label_comma()) +
+  labs(
+    title = "Distribution of Yearly Earnings by Channel Category",
+    x = "Category",
+    y = "Highest Yearly Earnings (dollars)"
+  ) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplotly(plot_earning_category)
+```
+
+
+```{r}
+# Plot of Number of YouTube Channels by Category
+category_data <- youtube |>
+  group_by(category) |>
+  summarize(n_channel = n(),
+            mean_subscribers = mean(subscribers, na.rm = TRUE))
+
+plot_channel_category <- ggplot(category_data, aes(x = reorder(category, n_channel), 
+                          y = n_channel,
+                          fill = mean_subscribers)) +
+  geom_bar(stat = "identity") +
+  scale_fill_viridis_c(option = "plasma", 
+                       name = "Mean Subscribers",
+                       labels = label_comma()) +
+  labs(
+    title = "Number of YouTube Channels by Category",
+    x = "Category",
+    y = "Number of Channels"
+  ) +
+  theme_bw()  +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplotly(plot_channel_category)
+```
+
+```{r}
+#| fig.width: 8
+#| fig.height: 7
+
+# Plot of Video Views vs Highest Yearly Earnings by Categroy and Subscribers
+youtube |>
+  ggplot(aes(x = video.views, y = highest_yearly_earnings)) +
+  geom_point(aes(color = category, size = subscribers), alpha = 0.5) +
+  geom_smooth(se = FALSE) +
+  scale_x_continuous(labels = label_comma()) +
+  scale_y_continuous(labels = label_comma()) +
+  scale_size_continuous(labels = label_comma()) +
+  labs(
+    title = "Video Views vs Highest Yearly Earnings by Category",
+    x = "Video Views",
+    y = "Highest Yearly Earnings (dollars)",
+    color = "Category",
+    size = "Subscribers"
+  ) +
+  theme_bw()
+```
+
+```{r warning = FALSE}
+# Plot of Number of Videos vs. Highest Yearly Earnings
+ggplot(youtube, aes(x = uploads, y = highest_yearly_earnings)) +
+  geom_hex() +
+  scale_x_log10(labels = label_comma()) + 
+  scale_y_log10(labels = label_comma()) +
+  scale_fill_viridis_c(option = "plasma") +
+  labs(
+    title = "Highest Yearly Earnings vs. Number of Videos Uploaded ",
+    x = "Number of Videos (log scale)",
+    y = "Highest Yearly Earnings in dollars (log scale)"
+  ) +
+  theme_bw()
+```
+
+
+```{r}
+# Word Cloud of YouTube channel Name
+library(wordcloud)
+
+name_data <- youtube |>
+  select(Youtuber) |>
+  unnest_tokens(word, Youtuber) |> 
+  anti_join(stop_words) |>
+  count(word, sort = TRUE)
+
+name_data |> 
+  filter(n > 4) |> 
+  mutate(word = reorder(word, n)) |> 
+  ggplot(aes(n, word, fill = word)) +
+    geom_col(show.legend = FALSE) +
+    xlab("Count") +
+    ylab("") +
+    ggtitle("Popular Words of YouTube Channel Name") +
+  theme_bw() +
+  scale_fill_viridis_d(option = "plasma")
+```
+
+```{r}
+set.seed(651)
+wordcloud(words = name_data$word,
+          freq = name_data$n,
+          max.words = 1000,
+          random.order = FALSE,
+          scale = c(4, 0.5))
+```
+
+```{r}
+library(ggwordcloud)
+name_data |> 
+  filter(n > 2) |> 
+  ggplot(aes(label = word, size = n, color = n)) +
+    geom_text_wordcloud() +
+    scale_size_area(max_size = 20) +
+    scale_color_gradient(low = "orange", high = "purple") +
+    theme_minimal()
+```
+
