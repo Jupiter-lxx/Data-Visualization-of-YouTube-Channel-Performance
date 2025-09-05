@@ -1,5 +1,5 @@
 ---
-title: "STAT651 Final Project: YouTube Data Visualization"
+title: "YouTube Data Visualization"
 author: "Xinxin Lin"
 format: 
   html:
